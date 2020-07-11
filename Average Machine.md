@@ -1,5 +1,5 @@
 # Storage
-Total storage = 4 Tb
+Total storage = 2 Tb
 Read QPS = 2k per second
 Write QPS = 200 per second
 

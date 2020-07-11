@@ -9,4 +9,6 @@ Number of online users = 8 * 0.10 billion = 800 million ~ 1 billion
 
 Active users percentage = 50%;
 Active users = 1000 * 0.5 million= 500 million
+## Facebook users
+- 2billions active users
 
