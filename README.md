@@ -257,4 +257,3 @@ If we chose to actively search for expired links to remove them, it would put a 
 # Analytics
 - How many times short URL was used?
 - What was the location of user?
-- 
