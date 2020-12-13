@@ -240,6 +240,9 @@ If we want to cache some of the hot URLs that are frequently accessed, how much 
 - To cache 20% of these requests: 
     - 0.2 * 1.7 billion * 500 bytes = ~170GB
 
+# How to handle if user uses shortened url to short it?
+- Detect the pattern based on domain or shortened url
+- Or allow 10 level of depth
 # Purging or DB cleanup
 If we chose to actively search for expired links to remove them, it would put a lot of pressure on our database. Instead, we can slowly remove expired links and do a lazy cleanup. 
 - Whenever user tries to access a expired link, we can delete link and return error to the user
