@@ -1,4 +1,6 @@
 # Requirements
+## Write code
+https://leetcode.com/problems/encode-and-decode-tinyurl/
 ## Functional Requirements
 - Given a URL, our service should generate a shorter and unique alias of it.
 - When users access a short link, our service should redirect them to the original link.
@@ -107,8 +109,9 @@ Let's go with 8 letter long
     - Even after this, if we have a conflict, we have to keep generating a key until we get a unique one.
 - What if parts of the URL are URL-encoded? e.g., `http://www.educative.io/distributed.php?id=design`, and `http://www.educative.io/distributed.php%3Fid%3Ddesign` are identical except for the URL encoding.
     - Apply default url decode on url before we use it to generate key
-### we have to keep generating a key until we get a unique one
-
+### We have to keep generating a key until we get a unique one
+- Add random salt with `url` and regenerate new key 
+- If key still exists, repeat process
 ## Generating keys offline
 ### Approach
 - We can have a standalone Key Generation Service (KGS) that generates random eight-letter strings beforehand and stores them in a database (let’s call it key-DB)
