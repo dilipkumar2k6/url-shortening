@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratelimit
+  labels:
+    app: ratelimit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ratelimit
+  template:
+    metadata:
+      labels:
+        app: ratelimit
+    spec:
+      containers:
+      - name: ratelimit
+        image: envoyproxy/ratelimit:master
+        command: ["/bin/ratelimit"]
+        env:
+        - name: REDIS_SOCKET_TYPE
+          value: "tcp"
+        - name: REDIS_URL
+          value: "redis-ratelimit:6379"
+        - name: RUNTIME_ROOT
+          value: "/data/ratelimit/config"
+        - name: RUNTIME_SUBDIRECTORY
+          value: "config"
+        ports:
+        - containerPort: 8081 # gRPC
+        - containerPort: 6070 # Debug/Admin
+        volumeMounts:
+        - name: config-volume
+          mountPath: /data/ratelimit/config/config
+      volumes:
+      - name: config-volume
+        configMap:
+          name: ratelimit-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratelimit
+spec:
+  selector:
+    app: ratelimit
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: 8081
+      targetPort: 8081
+    - name: debug
+      protocol: TCP
+      port: 6070
+      targetPort: 6070

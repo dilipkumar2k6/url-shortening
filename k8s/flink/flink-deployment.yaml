@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flink
+      component: jobmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: jobmanager
+    spec:
+      containers:
+      - name: jobmanager
+        image: flink-custom:latest
+        imagePullPolicy: IfNotPresent
+        args: ["jobmanager"]
+        ports:
+        - containerPort: 6123
+          name: rpc
+        - containerPort: 6124
+          name: blob-server
+        - containerPort: 8081
+          name: webui
+        env:
+        - name: FLINK_PROPERTIES
+          value: |
+            jobmanager.rpc.address: flink-jobmanager
+            taskmanager.numberOfTaskSlots: 1
+            state.backend: hashmap
+            taskmanager.memory.process.size: 1024m
+            jobmanager.memory.process.size: 1024m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager
+spec:
+  type: ClusterIP
+  ports:
+  - name: rpc
+    port: 6123
+  - name: blob-server
+    port: 6124
+  - name: webui
+    port: 8081
+  selector:
+    app: flink
+    component: jobmanager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flink
+      component: taskmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: taskmanager
+    spec:
+      containers:
+      - name: taskmanager
+        image: flink-custom:latest
+        imagePullPolicy: IfNotPresent
+        args: ["taskmanager"]
+        ports:
+        - containerPort: 6122
+          name: data
+        - containerPort: 6125
+          name: rpc
+        - containerPort: 6121
+          name: query-state
+        env:
+        - name: FLINK_PROPERTIES
+          value: |
+            jobmanager.rpc.address: flink-jobmanager
+            taskmanager.numberOfTaskSlots: 1
+            state.backend: hashmap
+            taskmanager.memory.process.size: 1024m
+            jobmanager.memory.process.size: 1024m

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cdc-worker
+  labels:
+    app: cdc-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cdc-worker
+  template:
+    metadata:
+      labels:
+        app: cdc-worker
+    spec:
+      containers:
+      - name: cdc-worker
+        image: cdc-worker:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: cdc-worker-config
+        env:
+        - name: OTEL_COLLECTOR_ADDR
+          value: "signoz-otel-collector:4317"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"

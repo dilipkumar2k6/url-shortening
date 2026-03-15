@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy-read
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: envoy-read
+  template:
+    metadata:
+      labels:
+        app: envoy-read
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.30-latest
+        command: ["envoy"]
+        args: ["-c", "/etc/envoy/envoy.yaml"]
+        ports:
+        - containerPort: 10000
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/envoy
+      volumes:
+      - name: config-volume
+        configMap:
+          name: envoy-config-read
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-read
+spec:
+  selector:
+    app: envoy-read
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 10000
+  type: LoadBalancer

@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: write-api
+  labels:
+    app: write-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: write-api
+  template:
+    metadata:
+      labels:
+        app: write-api
+    spec:
+      containers:
+      - name: write-api
+        image: write-api:latest
+        imagePullPolicy: IfNotPresent
+        args: ["--uuid-generator=hlcsnowflake"]
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: write-api-config
+        env:
+        - name: OTEL_COLLECTOR_ADDR
+          value: "signoz-otel-collector:4317"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10

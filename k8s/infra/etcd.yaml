@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd
+  labels:
+    app: etcd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      containers:
+      - name: etcd
+        image: quay.io/coreos/etcd:v3.5.18
+        command: ["/usr/local/bin/etcd"]
+        args:
+        - "--listen-client-urls=http://0.0.0.0:2379"
+        - "--advertise-client-urls=http://0.0.0.0:2379"
+        - "--initial-cluster-state=new"
+        ports:
+        - containerPort: 2379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd
+spec:
+  selector:
+    app: etcd
+  ports:
+    - protocol: TCP
+      port: 2379
+      targetPort: 2379

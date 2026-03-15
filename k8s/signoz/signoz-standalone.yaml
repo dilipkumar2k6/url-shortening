@@ -1,0 +1,358 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signoz-clickhouse-cluster-config
+data:
+  cluster.xml: |
+    <clickhouse>
+        <remote_servers>
+            <cluster>
+                <shard>
+                    <replica>
+                        <host>localhost</host>
+                        <port>9000</port>
+                    </replica>
+                </shard>
+            </cluster>
+        </remote_servers>
+    </clickhouse>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signoz-otel-collector-config
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch:
+        send_batch_size: 100
+        timeout: 1s
+    exporters:
+      clickhousetraces:
+        datasource: tcp://signoz-clickhouse:9000/signoz_traces
+      signozclickhousemetrics:
+        dsn: tcp://signoz-clickhouse:9000/signoz_metrics
+      clickhouselogsexporter:
+        dsn: tcp://signoz-clickhouse:9000/signoz_logs
+        timeout: 10s
+    service:
+      telemetry:
+        logs:
+          level: debug
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [clickhousetraces]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [signozclickhousemetrics]
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [clickhouselogsexporter]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signoz-clickhouse
+spec:
+  selector:
+    app: signoz-clickhouse
+  ports:
+  - name: tcp
+    port: 9000
+  - name: http
+    port: 8123
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signoz-clickhouse
+spec:
+  selector:
+    matchLabels:
+      app: signoz-clickhouse
+  template:
+    metadata:
+      labels:
+        app: signoz-clickhouse
+    spec:
+      containers:
+      - name: clickhouse
+        image: clickhouse/clickhouse-server:25.5.6
+        ports:
+        - containerPort: 9000
+        - containerPort: 8123
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "2Gi"
+          requests:
+            cpu: "200m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: cluster-config
+          mountPath: /etc/clickhouse-server/config.d/cluster.xml
+          subPath: cluster.xml
+        - name: zookeeper-config
+          mountPath: /etc/clickhouse-server/config.d/zookeeper.xml
+          subPath: zookeeper.xml
+        - name: users-config
+          mountPath: /etc/clickhouse-server/users.d/default-user.xml
+          subPath: default-user.xml
+      volumes:
+      - name: cluster-config
+        configMap:
+          name: signoz-clickhouse-cluster-config
+      - name: zookeeper-config
+        configMap:
+          name: signoz-clickhouse-zookeeper-config
+      - name: users-config
+        configMap:
+          name: signoz-clickhouse-users-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signoz-query-service
+spec:
+  selector:
+    app: signoz-query-service
+  ports:
+  - name: http
+    port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signoz-query-service
+spec:
+  selector:
+    matchLabels:
+      app: signoz-query-service
+  template:
+    metadata:
+      labels:
+        app: signoz-query-service
+    spec:
+      containers:
+      - name: query-service
+        image: signoz/query-service:latest
+        args: ["-cluster", ""]
+        env:
+        - name: ClickHouseUrl
+          value: "tcp://signoz-clickhouse:9000"
+        - name: STORAGE
+          value: "clickhouse"
+        - name: SIGNOZ_SQLSTORE_SQLITE_PATH
+          value: "/tmp/signoz.db"
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signoz-frontend
+spec:
+  selector:
+    app: signoz-frontend
+  ports:
+  - name: http
+    port: 3301
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signoz-frontend
+spec:
+  selector:
+    matchLabels:
+      app: signoz-frontend
+  template:
+    metadata:
+      labels:
+        app: signoz-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: signoz/frontend:latest
+        env:
+        - name: BACKEND_API_URL
+          value: "http://signoz-query-service:8080"
+        ports:
+        - containerPort: 3301
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: signoz-frontend-nginx-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signoz-frontend-nginx-config
+data:
+  default.conf: |
+    server {
+      listen       3301;
+      server_name  _;
+
+      gzip on;
+      gzip_static on;
+      gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript;
+      gzip_proxied  any;
+      gzip_vary on;
+      gzip_comp_level 6;
+      gzip_buffers 16 8k;
+      gzip_http_version 1.1;
+
+      client_max_body_size 24M;
+      large_client_header_buffers 8 128k;
+
+      location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm;
+        try_files $uri $uri/ /index.html;
+      }
+      location /api {
+        proxy_pass http://signoz-query-service:8080;
+      }
+
+      error_page   500 502 503 504  /50x.html;
+      location = /50x.html {
+        root   /usr/share/nginx/html;
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signoz-otel-collector
+spec:
+  selector:
+    app: signoz-otel-collector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+  - name: otlp-http
+    port: 4318
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signoz-otel-collector
+spec:
+  selector:
+    matchLabels:
+      app: signoz-otel-collector
+  template:
+    metadata:
+      labels:
+        app: signoz-otel-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: signoz/signoz-otel-collector:latest
+        args:
+        - "--config=/etc/otel-collector-config.yaml"
+        ports:
+        - containerPort: 4317
+        - containerPort: 4318
+        volumeMounts:
+        - name: otel-collector-config
+          mountPath: /etc/otel-collector-config.yaml
+          subPath: otel-collector-config.yaml
+      volumes:
+      - name: otel-collector-config
+        configMap:
+          name: signoz-otel-collector-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signoz-clickhouse-zookeeper-config
+data:
+  zookeeper.xml: |
+    <clickhouse>
+        <zookeeper>
+            <node>
+                <host>signoz-zookeeper</host>
+                <port>2181</port>
+            </node>
+        </zookeeper>
+    </clickhouse>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signoz-zookeeper
+spec:
+  selector:
+    app: signoz-zookeeper
+  ports:
+  - name: client
+    port: 2181
+  - name: follower
+    port: 2888
+  - name: leader
+    port: 3888
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signoz-zookeeper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: signoz-zookeeper
+  template:
+    metadata:
+      labels:
+        app: signoz-zookeeper
+    spec:
+      containers:
+      - name: zookeeper
+        image: signoz/zookeeper:3.7.1
+        env:
+        - name: ALLOW_ANONYMOUS_LOGIN
+          value: "yes"
+        ports:
+        - containerPort: 2181
+        - containerPort: 2888
+        - containerPort: 3888
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signoz-clickhouse-users-config
+data:
+  default-user.xml: |
+    <clickhouse>
+      <users>
+        <default>
+          <networks>
+            <ip>::/0</ip>
+          </networks>
+        </default>
+      </users>
+    </clickhouse>

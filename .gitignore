@@ -1,0 +1,42 @@
+# Go
+bin/
+obj/
+*.exe
+*.test
+*.prof
+vendor/
+
+# Node.js
+node_modules/
+dist/
+.npm
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Kubernetes / Local Dev
+*.kubeconfig
+.env
+.env.local
+.env.*.local
+
+# Flink / Temporary files
+root_seq_b64.txt
+analytics_seq_b64.txt
+analytics_flink_seq_b64.txt
+kafka_output.txt
+
+# Artifacts / Brain (Optional, but good to keep workspace clean)
+.gemini/
+# Firebase
+.env
+
