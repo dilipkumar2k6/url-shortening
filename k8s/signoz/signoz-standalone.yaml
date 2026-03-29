@@ -85,6 +85,8 @@ spec:
     metadata:
       labels:
         app: signoz-clickhouse
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: clickhouse
@@ -143,6 +145,8 @@ spec:
     metadata:
       labels:
         app: signoz-query-service
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: query-service
@@ -188,6 +192,8 @@ spec:
     metadata:
       labels:
         app: signoz-frontend
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: frontend
@@ -268,6 +274,8 @@ spec:
     metadata:
       labels:
         app: signoz-otel-collector
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: otel-collector
@@ -329,6 +337,8 @@ spec:
     metadata:
       labels:
         app: signoz-zookeeper
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: zookeeper

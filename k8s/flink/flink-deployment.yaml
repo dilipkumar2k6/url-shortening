@@ -26,6 +26,9 @@ spec:
           name: blob-server
         - containerPort: 8081
           name: webui
+        envFrom:
+        - configMapRef:
+            name: flink-config
         env:
         - name: FLINK_PROPERTIES
           value: |
@@ -80,6 +83,9 @@ spec:
           name: rpc
         - containerPort: 6121
           name: query-state
+        envFrom:
+        - configMapRef:
+            name: flink-config
         env:
         - name: FLINK_PROPERTIES
           value: |

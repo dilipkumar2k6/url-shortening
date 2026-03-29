@@ -1,0 +1,67 @@
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: google-jwt
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  jwtRules:
+  - issuer: "https://securetoken.google.com/gen-lang-client-0131917105"
+    audiences:
+    - "gen-lang-client-0131917105"
+    jwksUri: "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+    forwardOriginalToken: true
+    outputClaimToHeaders:
+    - header: "X-Istio-User-Id"
+      claim: "sub"
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: jwt-enforcement
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  rules:
+  - to:
+    - operation:
+        paths: ["*"]
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: x-user-id-fallback
+  namespace: istio-system
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: "envoy.filters.network.http_connection_manager"
+            subFilter:
+              name: "envoy.filters.http.router"
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.lua
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+          inlineCode: |
+            function envoy_on_request(request_handle)
+              local istio_user = request_handle:headers():get("X-Istio-User-Id")
+              local current_user = request_handle:headers():get("X-User-Id")
+              
+              if (current_user == nil or current_user == "") and istio_user ~= nil then
+                request_handle:headers():replace("X-User-Id", istio_user)
+              end
+            end

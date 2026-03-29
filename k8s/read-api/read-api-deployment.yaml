@@ -11,6 +11,8 @@ spec:
     metadata:
       labels:
         app: read-api
+      annotations:
+        traffic.sidecar.istio.io/excludeOutboundPorts: "9010"
     spec:
       containers:
       - name: read-api

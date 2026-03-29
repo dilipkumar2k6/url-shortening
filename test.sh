@@ -16,7 +16,7 @@ fi
 
 # 1. Port-forward Envoy in background
 echo "Port-forwarding Envoy..."
-kubectl port-forward svc/envoy 10000:80 > /dev/null 2>&1 &
+kubectl port-forward svc/envoy -n istio-system 10000:80 > /dev/null 2>&1 &
 PF_PID=$!
 
 # 1.1 Port-forward SigNoz Frontend
@@ -69,7 +69,7 @@ PF_WRITE_PID=$!
 # Wait for port-forward to be ready
 echo "Waiting for port-forward write to be ready..."
 for i in {1..10}; do
-    if curl -s http://localhost:10002/health > /dev/null; then
+    if curl -s http://localhost:10000/health > /dev/null; then
         echo "Port-forward write ready!"
         break
     fi
@@ -84,7 +84,7 @@ PF_ANALYTICS_PID=$!
 # Wait for port-forward to be ready
 echo "Waiting for port-forward analytics to be ready..."
 for i in {1..20}; do
-    if curl -s http://localhost:10003/health > /dev/null; then
+    if curl -s http://localhost:10000/health > /dev/null; then
         echo "Port-forward analytics ready!"
         break
     fi
@@ -93,7 +93,7 @@ done
 
 # 5. Port-forward Envoy Read in background
 echo "Port-forwarding Envoy Read..."
-kubectl port-forward svc/envoy-read 10001:80 > /dev/null 2>&1 &
+kubectl port-forward svc/envoy-read -n istio-system 10001:80 > /dev/null 2>&1 &
 PF_READ_PID=$!
 
 # Wait for port-forward to be ready
@@ -124,7 +124,7 @@ LOGGED_IN_USER="test-user-$(date +%s)"
 CUSTOM_SLUG="edit-test-$(date +%s)"
 
 echo "1. Shortening URL with custom slug: $CUSTOM_SLUG"
-SHORTEN_RESPONSE=$(curl -s -X POST http://localhost:10002/api/v1/shorten \
+SHORTEN_RESPONSE=$(curl -s -X POST http://localhost:10000/api/v1/shorten \
     -H "Content-Type: application/json" \
     -H "X-User-Id: $LOGGED_IN_USER" \
     -d "{\"long_url\": \"https://www.google.com\", \"custom_slug\": \"$CUSTOM_SLUG\"}")
@@ -140,11 +140,11 @@ echo "1b. Generating clicks for $CUSTOM_SLUG..."
 for i in {1..5}; do
     curl -s -o /dev/null http://localhost:10001/$CUSTOM_SLUG
 done
-echo "Waiting for analytics aggregation..."
-sleep 10
+echo "Waiting for analytics aggregation (30s)..."
+sleep 30
 
 echo "1c. Verifying link in top performant..."
-TOP_LINKS=$(curl -s http://localhost:10003/api/v1/analytics/top)
+TOP_LINKS=$(curl -s http://localhost:10000/api/v1/analytics/top)
 if echo "$TOP_LINKS" | grep -q "$CUSTOM_SLUG"; then
     echo "SUCCESS: Link found in top performant"
 else
@@ -153,7 +153,7 @@ else
 fi
 
 echo "2. Verifying link in history..."
-HISTORY_RESPONSE=$(curl -s -X GET http://localhost:10003/api/v1/user/history -H "X-User-Id: $LOGGED_IN_USER")
+HISTORY_RESPONSE=$(curl -s -X GET http://localhost:10000/api/v1/user/history -H "X-User-Id: $LOGGED_IN_USER")
 if echo "$HISTORY_RESPONSE" | grep -q "$CUSTOM_SLUG"; then
     echo "SUCCESS: Link found in history"
 else
@@ -162,7 +162,7 @@ else
 fi
 
 echo "3. Updating destination URL..."
-UPDATE_RESPONSE=$(curl -s -X PATCH http://localhost:10002/api/v1/links/$CUSTOM_SLUG \
+UPDATE_RESPONSE=$(curl -s -X PATCH http://localhost:10000/api/v1/links/$CUSTOM_SLUG \
     -H "Content-Type: application/json" \
     -H "X-User-Id: $LOGGED_IN_USER" \
     -d '{"long_url": "https://www.bing.com"}')
@@ -184,7 +184,7 @@ else
 fi
 
 echo "4. Verifying update in history..."
-HISTORY_RESPONSE=$(curl -s -X GET http://localhost:10003/api/v1/user/history -H "X-User-Id: $LOGGED_IN_USER")
+HISTORY_RESPONSE=$(curl -s -X GET http://localhost:10000/api/v1/user/history -H "X-User-Id: $LOGGED_IN_USER")
 if echo "$HISTORY_RESPONSE" | grep -q "bing.com"; then
     echo "SUCCESS: Updated URL found in history"
 else
@@ -193,7 +193,7 @@ else
 fi
 
 echo "5. Deleting link..."
-DELETE_RESPONSE=$(curl -s -X DELETE http://localhost:10002/api/v1/links/$CUSTOM_SLUG \
+DELETE_RESPONSE=$(curl -s -X DELETE http://localhost:10000/api/v1/links/$CUSTOM_SLUG \
     -H "X-User-Id: $LOGGED_IN_USER")
 
 if echo "$DELETE_RESPONSE" | grep -q "successfully"; then
@@ -204,7 +204,7 @@ else
 fi
 
 echo "5b. Verifying deletion in top performant..."
-TOP_LINKS_AFTER=$(curl -s http://localhost:10003/api/v1/analytics/top)
+TOP_LINKS_AFTER=$(curl -s http://localhost:10000/api/v1/analytics/top)
 if ! echo "$TOP_LINKS_AFTER" | grep -q "$CUSTOM_SLUG"; then
     echo "SUCCESS: Link removed from top performant"
 else
@@ -213,7 +213,7 @@ else
 fi
 
 echo "6. Verifying deletion in history..."
-HISTORY_RESPONSE=$(curl -s -X GET http://localhost:10003/api/v1/user/history -H "X-User-Id: $LOGGED_IN_USER")
+HISTORY_RESPONSE=$(curl -s -X GET http://localhost:10000/api/v1/user/history -H "X-User-Id: $LOGGED_IN_USER")
 if ! echo "$HISTORY_RESPONSE" | grep -q "$CUSTOM_SLUG"; then
     echo "SUCCESS: Link removed from history"
 else
@@ -287,7 +287,8 @@ fi
 echo "Verifying Flink Job Status..."
 FLINK_JOBS=$(kubectl exec deployment/flink-jobmanager -- curl -s http://localhost:8081/jobs)
 if echo "$FLINK_JOBS" | grep -q "RUNNING"; then
-    echo "SUCCESS: Flink job is RUNNING"
+    JOB_NAME=$(echo "$FLINK_JOBS" | grep -o '"name":"[^"]*"' | head -1 | cut -d'"' -f4)
+    echo "SUCCESS: Flink job '$JOB_NAME' is RUNNING"
 else
     echo "FAILURE: Flink job is not running"
     echo "Flink Jobs: $FLINK_JOBS"
@@ -299,6 +300,17 @@ echo "Deleting SigNoz Query Service pod to clear ephemeral DB..."
 kubectl delete pod -l app=signoz-query-service
 kubectl wait --for=condition=ready --timeout=300s pod -l app=signoz-query-service
 sleep 10
+
+echo "Waiting for SigNoz ClickHouse schema to be initialized..."
+for i in {1..30}; do
+    DB_EXISTS=$(kubectl exec deployment/signoz-clickhouse -- clickhouse-client --query "SHOW DATABASES" | grep signoz_metrics || true)
+    if [ "$DB_EXISTS" != "" ]; then
+        echo "SigNoz ClickHouse schema is ready!"
+        break
+    fi
+    echo "Waiting for signoz_metrics database... ($i/30)"
+    sleep 5
+done
 
 echo "Waiting for analytics aggregation..."
 sleep 15

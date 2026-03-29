@@ -1,0 +1,110 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: main-vs
+  namespace: istio-system
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - main-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /health
+    directResponse:
+      status: 200
+      body:
+        string: "OK"
+  - match:
+    - uri:
+        prefix: /api/v1/user/history
+    - uri:
+        prefix: /api/v1/analytics
+    route:
+    - destination:
+        host: analytics-api.default.svc.cluster.local
+        port:
+          number: 80
+  - corsPolicy:
+      allowOrigins:
+      - exact: "*"
+      allowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+      allowHeaders:
+      - keep-alive
+      - user-agent
+      - cache-control
+      - content-type
+      - content-transfer-encoding
+      - x-accept-content-transfer-encoding
+      - x-accept-response-streaming
+      - x-user-agent
+      - x-grpc-web
+      - grpc-timeout
+      - authorization
+      maxAge: 1728000s
+      exposeHeaders:
+      - grpc-status
+      - grpc-message
+    match:
+    - uri:
+        prefix: /api/v1/shorten
+    - uri:
+        prefix: /api/v1
+    route:
+    - destination:
+        host: write-api.default.svc.cluster.local
+        port:
+          number: 80
+  - match:
+    - uri:
+        prefix: /v1/traces
+    - uri:
+        prefix: /v1/metrics
+    - uri:
+        prefix: /v1/logs
+    route:
+    - destination:
+        host: signoz-otel-collector.default.svc.cluster.local
+        port:
+          number: 4318
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: frontend.default.svc.cluster.local
+        port:
+          number: 80
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: read-vs
+  namespace: istio-system
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - read-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /health
+    directResponse:
+      status: 200
+      body:
+        string: "OK"
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: read-api.default.svc.cluster.local
+        port:
+          number: 80

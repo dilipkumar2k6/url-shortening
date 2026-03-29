@@ -3,6 +3,21 @@
 set -e
 
 CLUSTER_NAME="url-shortener"
+FLINK_MODE="sql"
+
+# Parse arguments
+for i in "$@"; do
+    case $i in
+        --flink=*)
+            FLINK_MODE="${i#*=}"
+            shift
+            ;;
+        *)
+            ;;
+    esac
+done
+
+echo "Using Flink mode: $FLINK_MODE"
 
 # 1. Create kind cluster if not exists
 if ! kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
@@ -17,6 +32,15 @@ KUBECONFIG_FILE="$HOME/.kube/kind-${CLUSTER_NAME}"
 kind get kubeconfig --name ${CLUSTER_NAME} > "$KUBECONFIG_FILE"
 export KUBECONFIG="$KUBECONFIG_FILE"
 
+# 1.1 Install Istio
+echo "Installing Istio..."
+if ! command -v istioctl &> /dev/null; then
+    curl -L https://istio.io/downloadIstio | ISTIO_VERSION=1.21.0 TARGET_ARCH=x86_64 sh -
+    export PATH=$PATH:$(pwd)/istio-1.21.0/bin
+fi
+istioctl install --set profile=demo -y
+kubectl label namespace default istio-injection=enabled --overwrite
+
 # 2. Build Docker images
 echo "Building Docker images..."
 if [ -f .env ]; then
@@ -28,7 +52,15 @@ docker build -t write-api:latest -f backend/write-service/cmd/write-api/Dockerfi
 docker build -t cdc-worker:latest -f backend/write-service/cmd/cdc-worker/Dockerfile .
 docker build -t read-api:latest -f backend/read-service/cmd/read-api/Dockerfile .
 docker build -t analytics-api:latest -f backend/analytics-service/cmd/analytics-api/Dockerfile .
-docker build -t flink-custom:latest -f backend/analytics-service/flink/Dockerfile backend/analytics-service/flink/
+
+if [ "$FLINK_MODE" = "java" ]; then
+    echo "Building Flink Java image..."
+    docker build -t flink-custom:latest -f backend/analytics-service/flink-java/Dockerfile backend/analytics-service/flink-java/
+else
+    echo "Building Flink SQL image..."
+    docker build -t flink-custom:latest -f backend/analytics-service/flink/Dockerfile backend/analytics-service/flink/
+fi
+
 docker build -t frontend:latest \
     --build-arg VITE_SHORT_LINK_BASE_URL=http://localhost:10001 \
     --build-arg VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
@@ -130,7 +162,8 @@ kubectl wait --for=condition=available --timeout=300s deployment/spanner-emulato
 # Wait a bit for the emulator to be actually ready to accept connections
 sleep 10
 kubectl delete pod spanner-init --ignore-not-found
-kubectl run spanner-init --image=curlimages/curl --restart=Never -- /bin/sh -c \
+kubectl run spanner-init --image=curlimages/curl --restart=Never \
+  --annotations="sidecar.istio.io/inject=false" -- /bin/sh -c \
   "curl -X POST http://spanner-emulator:9020/v1/projects/url-shortener/instances -d '{\"instanceId\": \"main\", \"instance\": {\"config\": \"projects/url-shortener/instanceConfigs/emulator-config\", \"displayName\": \"Main Instance\", \"nodeCount\": 1}}' && \
    curl -X POST http://spanner-emulator:9020/v1/projects/url-shortener/instances/main/databases -d '{\"createStatement\": \"CREATE DATABASE urls\"}' && \
    curl -X PATCH http://spanner-emulator:9020/v1/projects/url-shortener/instances/main/databases/urls/ddl -d '{\"statements\": [\"CREATE TABLE url_mappings (id STRING(MAX) NOT NULL, long_url STRING(MAX) NOT NULL, user_id STRING(MAX), created_at TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true)) PRIMARY KEY (id)\"]}'"
@@ -143,7 +176,7 @@ kubectl exec deployment/clickhouse -- clickhouse-client --query "$(cat backend/a
 
 # 8. Deploy Application
 echo "Deploying application..."
-kubectl apply -R -f k8s/envoy/
+kubectl apply -f k8s/istio/
 kubectl apply -R -f k8s/write-api/
 kubectl apply -R -f k8s/cdc-worker/
 kubectl apply -R -f k8s/read-api/
@@ -159,14 +192,15 @@ kubectl rollout restart deployment/read-api
 kubectl rollout restart deployment/analytics-api
 kubectl rollout restart deployment/flink-jobmanager
 kubectl rollout restart deployment/flink-taskmanager
-kubectl rollout restart deployment/envoy
+# kubectl rollout restart deployment/envoy # Replaced by Istio
 kubectl rollout restart deployment/frontend
 kubectl rollout restart deployment/signoz-query-service
 
 # 12. Wait for application to be ready
 echo "Waiting for application to be ready..."
-kubectl wait --for=condition=available --timeout=300s deployment/envoy
-kubectl wait --for=condition=available --timeout=300s deployment/envoy-read
+kubectl wait --for=condition=available --timeout=300s deployment/istio-ingressgateway -n istio-system
+# kubectl wait --for=condition=available --timeout=300s deployment/envoy
+# kubectl wait --for=condition=available --timeout=300s deployment/envoy-read
 kubectl wait --for=condition=available --timeout=300s deployment/write-api
 kubectl wait --for=condition=available --timeout=300s deployment/cdc-worker
 kubectl wait --for=condition=available --timeout=300s deployment/read-api
@@ -175,8 +209,8 @@ kubectl wait --for=condition=available --timeout=300s deployment/flink-jobmanage
 kubectl wait --for=condition=available --timeout=300s deployment/flink-taskmanager
 kubectl wait --for=condition=available --timeout=300s deployment/frontend
 
-# 12.1 Submit Flink SQL Job
-echo "Submitting Flink SQL Job..."
+# 12.1 Submit Flink Job
+echo "Submitting Flink Job ($FLINK_MODE mode)..."
 # Wait for JobManager to be fully ready to accept jobs
 echo "Waiting for Flink JobManager to be ready to accept jobs..."
 for i in {1..30}; do
@@ -188,8 +222,25 @@ for i in {1..30}; do
     sleep 2
 done
 
-kubectl exec deployment/flink-jobmanager -- ./bin/flink run -d -c org.apache.flink.table.client.SqlClient /opt/flink/lib/flink-sql-client-*.jar -f /opt/flink/click_events_to_clickhouse.sql || \
-kubectl exec deployment/flink-jobmanager -- ./bin/sql-client.sh -f /opt/flink/click_events_to_clickhouse.sql
+if [ "$FLINK_MODE" = "java" ]; then
+    echo "Running Flink Java Job..."
+    kubectl exec deployment/flink-jobmanager -- ./bin/flink run -d /opt/flink/usrlib/flink-analytics.jar
+else
+    echo "Running Flink SQL Job..."
+    # Substitute environment variables in the SQL script before running
+    KAFKA_ADDR=$(kubectl exec deployment/flink-jobmanager -- printenv KAFKA_BOOTSTRAP_SERVERS)
+    CH_URL=$(kubectl exec deployment/flink-jobmanager -- printenv CLICKHOUSE_URL)
+    CH_USER=$(kubectl exec deployment/flink-jobmanager -- printenv CLICKHOUSE_USER)
+    CH_PWD=$(kubectl exec deployment/flink-jobmanager -- printenv CLICKHOUSE_PASSWORD)
+    
+    kubectl exec deployment/flink-jobmanager -- sed -i "s|\${KAFKA_BOOTSTRAP_SERVERS}|$KAFKA_ADDR|g" /opt/flink/click_events_to_clickhouse.sql
+    kubectl exec deployment/flink-jobmanager -- sed -i "s|\${CLICKHOUSE_URL}|$CH_URL|g" /opt/flink/click_events_to_clickhouse.sql
+    kubectl exec deployment/flink-jobmanager -- sed -i "s|\${CLICKHOUSE_USER}|$CH_USER|g" /opt/flink/click_events_to_clickhouse.sql
+    kubectl exec deployment/flink-jobmanager -- sed -i "s|\${CLICKHOUSE_PASSWORD}|$CH_PWD|g" /opt/flink/click_events_to_clickhouse.sql
+
+    kubectl exec deployment/flink-jobmanager -- ./bin/flink run -d -c org.apache.flink.table.client.SqlClient /opt/flink/lib/flink-sql-client-*.jar -f /opt/flink/click_events_to_clickhouse.sql || \
+    kubectl exec deployment/flink-jobmanager -- ./bin/sql-client.sh -f /opt/flink/click_events_to_clickhouse.sql
+fi
 
 echo "Setup complete!"
 
@@ -200,8 +251,8 @@ pkill -f "port-forward svc/envoy" || true
 pkill -f "port-forward svc/envoy-read" || true
 pkill -f "port-forward svc/signoz-frontend" || true
 
-kubectl port-forward svc/envoy 10000:80 > /dev/null 2>&1 &
-kubectl port-forward svc/envoy-read 10001:80 > /dev/null 2>&1 &
+kubectl port-forward svc/envoy -n istio-system 10000:80 > /dev/null 2>&1 &
+kubectl port-forward svc/envoy-read -n istio-system 10001:80 > /dev/null 2>&1 &
 kubectl port-forward svc/signoz-frontend 3301:3301 > /dev/null 2>&1 &
 
 echo "--------------------------------------------------"

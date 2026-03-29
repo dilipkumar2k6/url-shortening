@@ -10,7 +10,7 @@ CREATE TABLE click_events (
 ) WITH (
     'connector' = 'kafka',
     'topic' = 'click-events',
-    'properties.bootstrap.servers' = 'kafka:9092',
+    'properties.bootstrap.servers' = '${KAFKA_BOOTSTRAP_SERVERS}',
     'properties.group.id' = 'flink-analytics-group',
     'scan.startup.mode' = 'earliest-offset',
     'format' = 'json'
@@ -22,10 +22,10 @@ CREATE TABLE raw_click_events (
     country_code STRING
 ) WITH (
     'connector' = 'jdbc',
-    'url' = 'jdbc:mysql://clickhouse:9004/default',
+    'url' = '${CLICKHOUSE_URL}',
     'table-name' = 'raw_click_events',
-    'username' = 'default',
-    'password' = 'password',
+    'username' = '${CLICKHOUSE_USER}',
+    'password' = '${CLICKHOUSE_PASSWORD}',
     'driver' = 'com.mysql.cj.jdbc.Driver'
 );
 

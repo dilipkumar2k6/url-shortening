@@ -41,7 +41,7 @@ Date: Sat, 14 Mar 2026 13:55:39 GMT
 
 ## Implementation Details
 
-- **Envoy**: Validates short code format and enforces rate limits.
+- **Istio Service Mesh**: Validates short code format and enforces rate limits.
 - **Redis**: Primary cache lookup for sub-millisecond response times.
 - **Bloom Filter**: Secondary guard to prevent unnecessary database queries for non-existent keys.
 - **Singleflight**: Prevents cache stampede by collapsing concurrent requests for the same short code during cache misses.
@@ -57,7 +57,7 @@ The service is containerized using a multi-stage Dockerfile to ensure minimal im
 
 ### Kubernetes
 Manifests are organized into subdirectories:
-- `k8s/envoy/`: Edge proxy with rate limiting and short code validation.
+- `k8s/istio/`: Istio Service Mesh configurations (Gateways, VirtualServices).
 - `k8s/read-api/`: Stateless Read API service.
 
 ## Local Development & Testing

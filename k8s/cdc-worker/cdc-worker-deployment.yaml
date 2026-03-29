@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         app: cdc-worker
+      annotations:
+        traffic.sidecar.istio.io/excludeOutboundPorts: "9010"
     spec:
       containers:
       - name: cdc-worker

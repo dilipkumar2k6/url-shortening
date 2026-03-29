@@ -5,9 +5,11 @@ set -e
 CLUSTER_NAME="url-shortener"
 
 echo "Stopping port-forwarding processes..."
-pkill -f "port-forward svc/envoy" || true
-pkill -f "port-forward svc/envoy-read" || true
+pkill -f "port-forward svc/envoy -n istio-system" || true
+pkill -f "port-forward svc/envoy-read -n istio-system" || true
 pkill -f "port-forward svc/signoz-frontend" || true
+pkill -f "port-forward deployment/write-api" || true
+pkill -f "port-forward deployment/analytics-api" || true
 
 if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
     echo "Exporting kubeconfig for kind cluster..."
@@ -24,5 +26,8 @@ if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
 else
     echo "Kind cluster ${CLUSTER_NAME} does not exist."
 fi
+
+echo "Cleaning up local Istio files..."
+rm -rf istio-*/
 
 echo "Cleanup complete!"

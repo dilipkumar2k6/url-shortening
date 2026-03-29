@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         app: write-api
+      annotations:
+        traffic.sidecar.istio.io/includeOutboundIPRanges: ""
     spec:
       containers:
       - name: write-api

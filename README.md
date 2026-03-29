@@ -14,29 +14,20 @@ The system is designed with a clear separation between write and read paths to o
 
 ![Sequence Diagram](images/sequence_diagram.svg)
 
-## Envoy Architecture (API Gateway)
+## Istio Service Mesh Architecture
 
-The system uses two separate **Envoy** instances to achieve **Traffic Isolation** and **Performance Optimization**.
+The system uses **Istio Service Mesh** to manage traffic, security, and observability across all microservices, replacing the previous manual Envoy configuration.
 
-| Feature | `envoy` (Main) | `envoy-read` (Read) |
-| :--- | :--- | :--- |
-| **Primary Target** | `write-api`, `analytics-api`, `frontend` | `read-api` |
-| **Route Match** | `/api/v1/*`, `/` | `^/[a-zA-Z0-9-_]+$` (Short Code) |
-| **Authentication** | Yes (JWT via Google) | No |
-| **CORS** | Yes | No |
-| **Local Rate Limit** | 100 req/sec | 1000 req/sec |
-| **Global Rate Limit**| 500 req/sec | 5000 req/sec |
-| **Connect Timeout**| 5s | 0.25s |
-
-### Why Two Envoys?
-1. **Traffic Isolation**: High-volume redirect traffic (clicks) is isolated from management traffic (creating links, viewing dashboards).
-2. **Performance**: The `envoy-read` instance is stripped of Auth and CORS overhead, allowing ultra-fast routing with aggressive timeouts.
-3. **Independent Scaling**: Read and Write gateways can be scaled independently based on load.
+### Why Istio?
+1. **Traffic Isolation**: High-volume redirect traffic (clicks) is handled efficiently and isolated from management traffic using localized routing rules.
+2. **Security**: Handles JWT validation and mTLS transparently at the platform level.
+3. **Performance**: Optimized routing with low overhead for high-speed redirects.
 
 ### Rate Limiting Strategy
-The system employs a **defense-in-depth** rate limiting strategy to support multi-datacenter deployments:
-1.  **Local Rate Limiting**: Enforced independently by each Envoy instance using a token bucket. This protects the local node from sudden bursts.
-2.  **Global Rate Limiting**: Enforced across all datacenters using an external gRPC Rate Limit Service backed by a **dedicated Redis instance** (`redis-ratelimit`). This isolates rate limiting state from the application cache and protects backend databases (Spanner, ClickHouse) from exceeding aggregate capacity.
+The system continues to employ a defense-in-depth rate limiting strategy:
+1.  **Local Rate Limiting**: Enforced by Istio's sidecar proxies or gateways.
+2.  **Global Rate Limiting**: Still supported via integration with external rate limiting services if needed, or managed via Istio's advanced traffic management features.
+
 
 ## Core Components
 
