@@ -121,3 +121,21 @@ This will allow you to create a new admin account on the next visit.
 1. **Launch Cluster**: `./run.sh` (Creates Kind cluster and deploys all services)
 2. **Verify**: `./test.sh` (Runs integration tests)
 3. **Cleanup**: `./destroy.sh` (Deletes cluster)
+
+
+## Future Work
+
+We are continuously improving HyperShort. Key areas for future development include:
+
+- **Edge Computing**: Moving redirect logic to the edge (e.g., Cloudflare Workers or Lambda@Edge) for even lower latency.
+- **Enhanced Cache Invalidation**: Implementing CDN purging (e.g., Fastly) upon URL deletion.
+- **Fastly Integration**: Using Fastly as the primary CDN for global low-latency redirects.
+- **Security & Safe Browsing**: Integration with Google Safe Browsing API and custom Bloom filters for malicious domain detection.
+- **Geo-Aware Routing**: Directing users to the nearest point of presence (PoP) based on their geographic location.
+- **Redis Scalability**: Transitioning from a single Redis instance to a Redis Cluster or localized Redis caches to prevent bottlenecks.
+- **Pod Startup Optimization**: Reducing cold start times for Kubernetes pods during scaling events.
+- **Data Retention & GDPR**: Automated data cleanup and retention policies in compliance with GDPR.
+- **Kafka Monitoring**: Deployment of Kafka UI for better visibility into message streams.
+- **Multi-Level Caching**: Implementing an in-memory cache (e.g., `go-cache` or `lru`) in the Read Service for faster lookups than Redis.
+- **URL Expiry**: Support for user-defined TTL/expiry for shortened links.
+
